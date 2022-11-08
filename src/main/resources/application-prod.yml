@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: user-center
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://123.249.89.16:3306/user-center
+    username: root
+    password: Lkx3091705416
+  # session失效时间
+  session:
+    timeout: 86400
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: false
+  global-config:
+    db-config:
+      logic-delete-field: isDelete # 全局逻辑删除的字段名
+      logic-delete-value: 1 #  逻辑已删除值
+      logic-not-delete-value: 0 # 逻辑未删除值
