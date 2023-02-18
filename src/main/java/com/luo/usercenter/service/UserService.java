@@ -5,6 +5,7 @@ import com.luo.usercenter.model.User;
 import org.apache.ibatis.annotations.Param;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.List;
 
 /**
  * @author lkx
@@ -46,4 +47,42 @@ public interface UserService extends IService<User> {
      * @return int 返回数字
      */
     int userLogout(HttpServletRequest request);
+
+    /**
+     * 根据标签搜索用户
+     * @param tagNameList 标签列表
+     * @return 返回数量
+     */
+    List<User> searchUsersByTags(List<String> tagNameList);
+
+    /**
+     * 更新用户信息
+     * @param user 要更新的user对象
+     * @param loginUser 当前登录的用户信息
+     * @return 返回是否更新成功 1 更新成功,其他失败
+     */
+    Integer updateUser(User user,User loginUser);
+
+    /**
+     * 获取当前登录用户信息
+     * @param request 请求信息
+     * @return 返回当前登录用户的信息
+     */
+    User getLoginUser(HttpServletRequest request);
+
+    /**
+     * 是否为管理员
+     *
+     * @param request 请求
+     * @return 布尔值
+     */
+    boolean isAdmin(HttpServletRequest request);
+
+    /**
+     * 判断当前用户是否为管理员
+     *
+     * @param loginUser 当前登录的用户
+     * @return 返回当前用户是否为管理员
+     */
+    boolean isAdmin(User loginUser);
 }

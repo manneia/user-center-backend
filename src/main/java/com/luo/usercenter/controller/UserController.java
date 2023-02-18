@@ -1,6 +1,7 @@
-package com.luo.usercenter.conrtoller;
+package com.luo.usercenter.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.luo.usercenter.common.BaseResponse;
 import com.luo.usercenter.common.ErrorCode;
 import com.luo.usercenter.exception.BusinessException;
@@ -9,16 +10,19 @@ import com.luo.usercenter.model.request.UserLoginRequest;
 import com.luo.usercenter.model.request.UserRegisterRequest;
 import com.luo.usercenter.service.UserService;
 import com.luo.usercenter.utils.ResultUtils;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static com.luo.usercenter.contant.UserConstant.ADMIN_ROLE;
 import static com.luo.usercenter.contant.UserConstant.USER_LOGIN_STATE;
 
 /**
@@ -28,9 +32,14 @@ import static com.luo.usercenter.contant.UserConstant.USER_LOGIN_STATE;
  */
 @RestController
 @RequestMapping("/user")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
+@Slf4j
 public class UserController {
     @Resource
     private UserService userService;
+
+    @Resource
+    private RedisTemplate<String, Object> redisTemplate;
 
     @PostMapping("/register")
     public BaseResponse<Long> userRegister(@RequestBody UserRegisterRequest userRegisterRequest) {
@@ -84,9 +93,9 @@ public class UserController {
         return ResultUtils.success(safetyUser);
     }
 
-    @PostMapping("/search")
+    @GetMapping("/search")
     public BaseResponse<List<User>> searchUsers(String username, HttpServletRequest request) {
-        if (isAdmin(request)) {
+        if (!userService.isAdmin(request)) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
         QueryWrapper<User> queryWrapper = new QueryWrapper<>();
@@ -94,16 +103,58 @@ public class UserController {
             queryWrapper.like("username", username);
         }
         List<User> userList = userService.list(queryWrapper);
-        List<User> collect = userList.stream().map(user -> {
-            user.setUserPassword(null);
-            return user;
-        }).collect(Collectors.toList());
+        List<User> collect = userList.stream().peek(user -> userService.getSafetyUser(user)).collect(Collectors.toList());
         return ResultUtils.success(collect);
+    }
+
+    @GetMapping("/search/tags")
+    public BaseResponse<List<User>> searchUsersByTags(@RequestParam(required = false) List<String> tagNameList) {
+        if (CollectionUtils.isEmpty(tagNameList)) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        List<User> userList = userService.searchUsersByTags(tagNameList);
+        return ResultUtils.success(userList);
+    }
+
+    @GetMapping("/recommend")
+    public BaseResponse<Page<User>> recommendUsers(long pageSize, long pageNum, HttpServletRequest request) {
+        // 判断缓存中是否有数据,
+        User loginUser = userService.getLoginUser(request);
+        String redisKey = String.format("luo:user:recommend:%s", loginUser.getId());
+        ValueOperations<String, Object> valueOperations = redisTemplate.opsForValue();
+        Page<User> userPage = (Page<User>) valueOperations.get(redisKey);
+        //如果有直接读缓存
+        if (userPage != null) {
+            return ResultUtils.success(userPage);
+        }
+        // 无缓存, 查数据库
+        QueryWrapper<User> queryWrapper = new QueryWrapper<>();
+        userPage = userService.page(new Page<>(pageNum, pageSize), queryWrapper);
+        // 写缓存
+        try {
+            valueOperations.set(redisKey, userPage, 10, TimeUnit.MINUTES);
+        } catch (Exception e) {
+            log.error("redis set key error", e);
+        }
+        return ResultUtils.success(userPage);
+    }
+
+    @PostMapping("/update")
+    public BaseResponse<Integer> updateUser(@RequestBody User user, HttpServletRequest request) {
+        //1. 校验参数是否为空
+        if (user == null) {
+            throw new BusinessException(ErrorCode.PARAMS_ERROR);
+        }
+        //2. 校验权限
+        //3. 触发更新
+        User loginUser = userService.getLoginUser(request);
+        Integer result = userService.updateUser(user, loginUser);
+        return ResultUtils.success(result);
     }
 
     @PostMapping("/delete")
     public BaseResponse<Boolean> deleteUser(@RequestBody long id, HttpServletRequest request) {
-        if (isAdmin(request)) {
+        if (!userService.isAdmin(request)) {
             throw new BusinessException(ErrorCode.NO_AUTH);
         }
         if (id <= 0) {
@@ -111,18 +162,5 @@ public class UserController {
         }
         boolean b = userService.removeById(id);
         return ResultUtils.success(b);
-    }
-
-    /**
-     * 是否为管理员
-     *
-     * @param request 请求
-     * @return 布尔值
-     */
-    private boolean isAdmin(HttpServletRequest request) {
-        // 鉴权仅管理员可查询
-        Object userObject = request.getSession().getAttribute(USER_LOGIN_STATE);
-        User user = (User) userObject;
-        return user == null || user.getUserRole() != ADMIN_ROLE;
     }
 }

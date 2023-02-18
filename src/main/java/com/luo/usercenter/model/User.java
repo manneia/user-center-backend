@@ -39,6 +39,10 @@ public class User implements Serializable {
      */
     private Integer gender;
     /**
+     * 个人简介
+     */
+    private String profile;
+    /**
      * 角色 0 - 普通用户 1- 管理员
      */
     private Integer userRole;
@@ -62,6 +66,11 @@ public class User implements Serializable {
      * 状态 0 - 正常
      */
     private Integer userStatus;
+
+    /**
+     * 标签列表 json
+     */
+    private String tags;
 
     /**
      * 创建时间
